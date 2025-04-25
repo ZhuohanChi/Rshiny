@@ -76,7 +76,8 @@ fluidPage(
     column(12,
            h4("Real-World Impact"),
            p("My work helps identify infections in NICU infants faster, enabling earlier intervention and potentially reducing ICU mortality rates."),
-           p("By visualizing key clinical variables and optimizing model hyperparameters, it supports more informed and timely medical decision-making by my model.")
+           p("By visualizing key clinical variables and optimizing model hyperparameters, it supports more informed and timely medical decision-making by my model."),
+           p("Github Link: https://github.com/ZhuohanChi/Rshiny")
     )
   )
 )
