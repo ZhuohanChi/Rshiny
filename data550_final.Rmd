@@ -1,0 +1,179 @@
+---
+ title: "Interactive Visualizations"
+ output:
+   html_document:
+     df_print: paged
+ runtime: shiny
+---
+
+```{r}
+# Load necessary libraries
+library(shiny)
+library(plotly)
+
+# Read the boxplot datasets
+nicu_30_mean <- read.csv("./data/nicu_30_mean.csv", stringsAsFactors = FALSE)
+nicu_120_mean <- read.csv("./data/nicu_120_mean.csv", stringsAsFactors = FALSE)
+
+# Read the line chart datasets
+nicu_120_cb <- read.csv("./data/nicu_120_cb_data.csv", stringsAsFactors = FALSE)
+nicu_30_cb  <- read.csv("./data/nicu_30_cb_data.csv",  stringsAsFactors = FALSE)
+nicu_120_gb <- read.csv("./data/nicu_120_gb_data.csv", stringsAsFactors = FALSE)
+nicu_30_gb  <- read.csv("./data/nicu_30_gb_data.csv",  stringsAsFactors = FALSE)
+```
+
+```{r}
+#==================== UI ====================#
+ui <- fluidPage(
+  titlePanel("Two Interactive Widgets"),
+
+  tabsetPanel(
+    #========== Box Plot Tab ==========#
+    tabPanel(
+      title = "Box Plot",
+
+      sidebarLayout(
+        sidebarPanel(
+          selectInput("timeSel", "Time Window:",
+                      choices = c("30min", "120min")),
+          selectInput("varSel", "Variable:",
+                      choices = names(nicu_30_mean)[-c(1,11)],
+                      selected = "Heart Rate_mean_30")
+        ),
+        mainPanel(
+          plotlyOutput("boxPlot"),
+          h4("Take-away for Box Plot"),
+          p("This box plot shows the distribution of the selected variable, comparing infected vs. non-infected patients over different time windows. Hovering displays summary statistics. People can know basic data distribution in the dataset")
+        )
+      )
+    ),
+
+    #========== Line Chart Tab ==========#
+    tabPanel(
+      title = "Line Chart",
+
+      sidebarLayout(
+        sidebarPanel(
+          selectInput("dataSel", "Choose Dataset:",
+                      choices = c("120min CatBoost"      = "120_cb",
+                                  "30min CatBoost"       = "30_cb",
+                                  "120min GradientBoost" = "120_gb",
+                                  "30min GradientBoost"  = "30_gb"))
+        ),
+        mainPanel(
+          plotlyOutput("linePlot"),
+          h4("Take-away for Line Chart"),
+          p("This line plot compares CV Score, Precision, Recall, F1, and Accuracy for different ranks of model performance. Hovering shows the hyperparameter details. It is easily to find the best machine learning hyperparameter in different machine learning models")
+        )
+      )
+    ),
+
+    #========== Dataset Description Tab ==========#
+    tabPanel(
+      title = "Dataset Description",
+      fluidRow(
+        column(12,
+          h3("Dataset Overview"),
+          p("Data Source: Neonatal intensive care unit (NICU) electronic health record extracts from MIMIC-III public dataset."),
+          p("Sample Size: 2,450 patient encounters (approximately 12 million time‑stamped vital‑sign observations)."),
+          p("Collection Method: Retrospective SQL extraction of electronic health records from MIMIC-III public dataset."),
+          p("Study Population: Infants admitted to the NICU once, and alive in the first two hours after admitted to ICU.")
+        )
+      )
+    )
+  )
+)
+```
+
+```{r}
+#================== SERVER ==================#
+server <- function(input, output) {
+
+  #------ Box Plot Section ------#
+  selectedDataBox <- reactive({
+    if (input$timeSel == "30min") {
+      nicu_30_mean
+    } else {
+      nicu_120_mean
+    }
+  })
+
+  output$boxPlot <- renderPlotly({
+    df_box <- selectedDataBox()
+
+    plot_ly(
+      data = df_box,
+      x = ~factor(is_infected),
+      y = ~.data[[input$varSel]],
+      color = ~factor(is_infected),
+      type = "box",
+      boxpoints = "all",
+      jitter = 0.3
+    ) %>%
+      layout(
+        title = paste("Boxplot of", input$varSel, "by Infection Status"),
+        xaxis = list(title = "Infection (0=No, 1=Yes)"),
+        yaxis = list(title = input$varSel)
+      )
+  })
+
+  #------ Line Chart Section ------#
+  selectedDataLine <- reactive({
+    df_line <- switch(input$dataSel,
+                      "120_cb" = nicu_120_cb,
+                      "30_cb"  = nicu_30_cb,
+                      "120_gb" = nicu_120_gb,
+                      "30_gb"  = nicu_30_gb)
+
+    # Ensure columns exist
+    if (!"Ranking" %in% colnames(df_line)) {
+      stop("Ranking column is missing from the dataset.")
+    }
+    df_line$Ranking <- as.numeric(df_line$Ranking)
+
+    if (!"Hyperparameters" %in% colnames(df_line)) {
+      df_line$Hyperparameters <- "N/A"
+    } else {
+      df_line$Hyperparameters <- as.character(df_line$Hyperparameters)
+    }
+    df_line
+  })
+
+  output$linePlot <- renderPlotly({
+    df_line <- selectedDataLine()
+
+    hover_text <- ~paste(
+      "Rank:", Ranking,
+      "<br>CV Score:", round(CV_Score, 4),
+      "<br>Precision:", round(Precision, 4),
+      "<br>Recall:", round(Recall, 4),
+      "<br>F1:", round(F1_Score, 4),
+      "<br>Accuracy:", round(Accuracy, 4),
+      "<br>Hyperparameters:", Hyperparameters
+    )
+
+    plot_ly(df_line, x = ~Ranking) %>%
+      add_trace(y = ~CV_Score,   name = "CV Score",
+                type = "scatter", mode = "lines+markers",
+                text = hover_text, hoverinfo = "text") %>%
+      add_trace(y = ~Precision,  name = "Precision",
+                type = "scatter", mode = "lines+markers",
+                text = hover_text, hoverinfo = "text") %>%
+      add_trace(y = ~Recall,     name = "Recall",
+                type = "scatter", mode = "lines+markers",
+                text = hover_text, hoverinfo = "text") %>%
+      add_trace(y = ~F1_Score,   name = "F1",
+                type = "scatter", mode = "lines+markers",
+                text = hover_text, hoverinfo = "text") %>%
+      add_trace(y = ~Accuracy,   name = "Accuracy",
+                type = "scatter", mode = "lines+markers",
+                text = hover_text, hoverinfo = "text") %>%
+      layout(
+        title = paste("Line Chart -", input$dataSel),
+        xaxis = list(title = "Ranking"),
+        yaxis = list(title = "Score")
+      )
+  })
+}
+```
+
